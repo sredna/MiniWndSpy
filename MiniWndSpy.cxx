@@ -187,7 +187,7 @@ static LRESULT CALLBACK LockKbdHookProc(int Code, WPARAM WPar, LPARAM LPar)
 	KBDLLHOOKSTRUCT*pKHS = (KBDLLHOOKSTRUCT*) LPar;
 	if (Code == 0 && WPar == WM_KEYUP)
 		if (pKHS->vkCode == VK_CAPITAL)
-			SendMessage(g_hMain, WM_COMMAND, IDC_LOCK, (SIZE_T) HWND_MESSAGE);
+			SendMessageTimeout(g_hMain, WM_COMMAND, IDC_LOCK, (SIZE_T) HWND_MESSAGE); // Lock
 	return CallNextHookEx(g_hLockKbdHook, Code, WPar, LPar);
 }
 
@@ -259,14 +259,14 @@ static BOOL CALLBACK EnumPropsProc(HWND, LPTSTR Name, HANDLE Value, ULONG_PTR Co
 {
 	TCHAR atombuf[42], valbuf[88], *Output = (LPTSTR) ((SIZE_T*)Cookie)[0];
 	SIZE_T *cchAvail = &((SIZE_T*)Cookie)[1], *cchOffset = &((SIZE_T*)Cookie)[2], start;
-	LPCTSTR fmt = sizeof(void*) > 4 ? TEXT("=0x%IX") : TEXT("=0x%X");
-	UINT cchVal = wsprintf(valbuf, fmt, Value), cchName;
-	if ((ATOM)(SIZE_T) Name == (SIZE_T) Name) 
+	LPCTSTR valfmt = sizeof(void*) > 4 ? TEXT("=0x%IX") : TEXT("=0x%X");
+	UINT cchVal = wsprintf(valbuf, valfmt, Value), cchName;
+	if ((ATOM)(SIZE_T) Name == (SIZE_T) Name)
 		cchName = wsprintf(atombuf, TEXT("#%u"), (ATOM)(SIZE_T) Name), Name = atombuf;
 	else
 		cchName = lstrlen(Name);
 
-	UINT first = !*cchOffset, cchReq = cchName + cchVal + (first ? 2 : 0);
+	UINT first = !*cchOffset, cchReq = cchName + cchVal + (first ? 0 : 2);
 	start = *cchOffset;
 	if (start + cchReq < *cchAvail)
 	{
@@ -499,7 +499,7 @@ restart:
 
 static inline void PickWindow(HWND hWnd, bool Lock = false)
 {
-	if (Lock) SendMessage(g_hMain, WM_COMMAND, IDC_LOCK, (SIZE_T) HWND_MESSAGE);
+	if (Lock) SendMessage(g_hMain, WM_COMMAND, IDC_LOCK, (SIZE_T) HWND_MESSAGE); // Lock
 	g_ForceClass = -1;
 	UpdateSummary(g_hSelected = hWnd);
 }
@@ -535,6 +535,7 @@ static void AppendStyleMenu(HMENU hMenu, UINT FirstId, UINT Style, UINT Mask, co
 {
 	SimpleStyleLutHandlerInterface *pHandler = GetHandler(Lut);
 	UINT count = pHandler->GetCount(Lut), hideUnknown = GetKeyState(VK_SHIFT) >= 0;
+	bool mayDisplayUnknownSetBit = Lut != g_WindowExStyles;
 	for (UINT any = 0, i = 0; i < 32; ++i)
 	{
 		UINT bit = 1 << i, known = false;
@@ -542,7 +543,8 @@ static void AppendStyleMenu(HMENU hMenu, UINT FirstId, UINT Style, UINT Mask, co
 		for (UINT j = 0; ++j <= count;)
 			if (Lut[j].Bit == bit)
 				name = pHandler->GetName(Lut[j], Style), known++;
-		if (!known && (hideUnknown || !(bit & Mask))) continue;
+		bool forceDisplay = (bit & Style) && mayDisplayUnknownSetBit;
+		if (!known && !forceDisplay && (hideUnknown || !(bit & Mask))) continue;
 		TCHAR buf[MAX_PATH];
 		wsprintf(buf, L"%S\t%.8X", const_cast<LPCSTR>(name), bit);
 		StrCpyRaw((LPSTR) buf, buf);
@@ -907,7 +909,7 @@ static LRESULT CALLBACK MainWndProc(HWND hWnd, UINT Msg, WPARAM WPar, LPARAM LPa
 
 		if (WPar >= IDC_FORCECLASS_FIRST && WPar <= IDC_FORCECLASS_LAST)
 		{
-			SendMessage(hWnd, WM_COMMAND, IDC_LOCK, (SIZE_T) HWND_MESSAGE);
+			SendMessage(hWnd, WM_COMMAND, IDC_LOCK, (SIZE_T) HWND_MESSAGE); // Lock
 			g_ForceClass = LOWORD(WPar - IDC_FORCECLASS_FIRST);
 			UpdateSummary(g_hSelected);
 		}
@@ -1207,7 +1209,7 @@ template<class T> static inline int App()
 	MSG msg;
 	while ((int) GetMessage(&msg, NULL, 0, 0) > 0)
 	{
-		if ((msg.message == WM_KEYDOWN) | (msg.message == WM_SYSKEYDOWN))
+		if ((msg.message == WM_KEYDOWN) || (msg.message == WM_SYSKEYDOWN))
 		{
 			UINT alt = msg.message == WM_SYSKEYDOWN, ctr = GetKeyState(VK_CONTROL) < 0, shf = GetKeyState(VK_SHIFT) < 0, cmd;
 			UINT accel = MAKEWORD(BYTE(msg.wParam), (alt ? MOD_ALT : 0) | (ctr ? MOD_CONTROL : 0) | (shf ? MOD_SHIFT : 0)), i;
@@ -1216,7 +1218,7 @@ template<class T> static inline int App()
 					cmd = g_AccelTable[i].Cmd;
 			if (cmd)
 			{
-				bool valid = -1L == (UINT) SNDMSG(g_hTBar, TB_COMMANDTOINDEX, cmd, 0);
+				bool valid = -1L == (UINT) SNDMSG(g_hTBar, TB_COMMANDTOINDEX, cmd, 0); // Anything not on the toolbar does its own validation when invoked.
 				if (valid || SNDMSG(g_hTBar, TB_ISBUTTONENABLED, cmd, 0))
 					SNDMSG(g_hMain, WM_COMMAND, cmd, 0);
 				else
