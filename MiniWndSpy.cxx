@@ -23,7 +23,7 @@ enum {
 	IDC_EDITATTRIBUTE,
 	IDC_FORCECLASS_NONE, IDC_FORCECLASS_FIRST, IDC_FORCECLASS_LAST = IDC_FORCECLASS_FIRST + ARRAYSIZE(g_KnownControls),
 	TID_CAPTUREWINDOW = 1, TID_REFRESH, TID_STOPREFRESH,
-	VER_A = 1, VER_B = 0, VER_C = ___BUILDDATE % 100000 / 10
+	VER_A = 1, VER_B = 1, VER_C = ___BUILDDATE % 100000 / 10
 };
 enum {
 	ROW_HWND = 0, ROW_CLASS, ROW_CAPTION, ROW_SEP1, ROW_SCLS, ROW_SWND, ROW_SEXT, ROW_SCTL, ROX_SCEX, ROW_PROP, 
@@ -248,17 +248,20 @@ static int WINAPI GetRemoteWindowText(HWND hWnd, LPTSTR Buf, INT BufCap)
 static void GetCombinedWindowInfo(HWND hWnd, LPTSTR Buf, UINT BufCap)
 {
 	UINT cch = 2 + wsprintf(Buf, PRI_HWND, hWnd), more;
+
 	more = cch + 1 < BufCap ? GetClassName(hWnd, Buf + cch, BufCap - (cch + 1)) : 0;
 	if (more) Buf[cch - 2] = ' ', Buf[cch - 1] = '[', *(UINT*)(&Buf[cch + more]) = ']', cch += more + 1;
+	
 	more = cch + 1 < BufCap ? GetRemoteWindowText(hWnd, Buf + cch + 1, BufCap - (cch + 1)) : 0;
 	if (more) Buf[cch + 0] = ' ', cch += more + 1;
+
 	if (cch + 1 >= BufCap && BufCap > 3) StrCpyRaw(&Buf[BufCap-4], "..."), cch = BufCap - 1;
 }
 
 static BOOL CALLBACK EnumPropsProc(HWND, LPTSTR Name, HANDLE Value, ULONG_PTR Cookie)
 {
 	TCHAR atombuf[42], valbuf[88], *Output = (LPTSTR) ((SIZE_T*)Cookie)[0];
-	SIZE_T *cchAvail = &((SIZE_T*)Cookie)[1], *cchOffset = &((SIZE_T*)Cookie)[2], start;
+	SIZE_T *cchAvail = &((SIZE_T*)Cookie)[1], *cchOffset = &((SIZE_T*)Cookie)[2];
 	LPCTSTR valfmt = sizeof(void*) > 4 ? TEXT("=0x%IX") : TEXT("=0x%X");
 	UINT cchVal = wsprintf(valbuf, valfmt, Value), cchName;
 	if ((ATOM)(SIZE_T) Name == (SIZE_T) Name)
@@ -267,7 +270,7 @@ static BOOL CALLBACK EnumPropsProc(HWND, LPTSTR Name, HANDLE Value, ULONG_PTR Co
 		cchName = lstrlen(Name);
 
 	UINT first = !*cchOffset, cchReq = cchName + cchVal + (first ? 0 : 2);
-	start = *cchOffset;
+	SIZE_T start = *cchOffset;
 	if (start + cchReq < *cchAvail)
 	{
 		if (!first) start += StrCpyRaw(Output + start, TEXT(", "));
@@ -333,6 +336,7 @@ static void UpdateSummary(HWND hWnd)
 	case 32772: StrCpyRaw(buf + cch, " (Icon)"); break;
 	}
 	SNDMSG(hList, LVM_SETITEMTEXT, ROW_CLASS, (SIZE_T)(&lvi));
+
 	UINT classMagic = FASTCLASSHASH(buf), isRichEdit = 0;
 	if (classMagic == FASTCLASSHASH(TEXT("RichEdit")))
 	{
@@ -530,7 +534,6 @@ static void PickWindow()
 	}
 }
 
-
 static void AppendStyleMenu(HMENU hMenu, UINT FirstId, UINT Style, UINT Mask, const SIMPLESTYLELUT Lut[])
 {
 	SimpleStyleLutHandlerInterface *pHandler = GetHandler(Lut);
@@ -564,7 +567,7 @@ static void DisplayAttributeMenu(LPARAM LPar)
 	lvi.pszText = buf, lvi.cchTextMax = ARRAYSIZE(buf);
 	lvi.iItem = ListView_GetNextItem(hList, -1, LVNI_SELECTED);
 	UINT haveSelWnd = IsWindow(hWndAtt = g_hSelected);
-	
+
 	if (lvi.iItem != -1 && ListView_GetItem(hList, &lvi))
 	{
 		RECT r;
@@ -590,7 +593,7 @@ static void DisplayAttributeMenu(LPARAM LPar)
 				AppendMenuA(hMenu, MF_SEPARATOR, 0, 0);
 			}
 		}
-		AppendMenuA(hMenu, MF_STRING|(*lvi.pszText ? 0 : MF_GRAYED), IDC_COPY, "&Copy" "\tCtrl+C");
+		AppendMenuA(hMenu, MF_STRING|MenuEnabledFlag(*lvi.pszText), IDC_COPY, "&Copy" "\tCtrl+C");
 		AppendMenuA(hMenu, MF_SEPARATOR, 0, 0);
 		AppendMenuA(hMenu, MF_STRING, IDC_REFRESH, "&Refresh" "\tF5");
 		switch(haveSelWnd ? lvi.iItem : ROW_SEP1)
@@ -725,7 +728,7 @@ static void InitializeMainWindow()
 	RECT r;
 	HWND hWnd = g_hMain;
 	RefreshControlMetrics();
-	
+
 	HMONITOR hSrcMon = 0, hDstMon = 0;
 	WINDOWPLACEMENT wp;
 	GetWindowPlacement(hWnd, (wp.length = sizeof(wp), &wp));
@@ -844,7 +847,7 @@ static LRESULT CALLBACK MainWndProc(HWND hWnd, UINT Msg, WPARAM WPar, LPARAM LPa
 				if (!cch) ptbgit->pszText = (LPTSTR) ptbgit->lParam;
 			}
 			break;
-		
+
 		case (IDC_LIST << 16) ^ LVN_ITEMCHANGED:
 			{
 				NMLISTVIEW&nmlv = *(NMLISTVIEW*) pNMH;
@@ -934,8 +937,9 @@ static LRESULT CALLBACK MainWndProc(HWND hWnd, UINT Msg, WPARAM WPar, LPARAM LPa
 				SendMessage((HWND) LPar, TB_GETITEMRECT, idx, (SIZE_T) &r);
 				MapWindowPoints((HWND) LPar, NULL, (POINT*) &r, 2);
 				r.left = ralign ? r.right : r.left, r.top = r.bottom;
+
 				HMENU hMenu = CreatePopupMenu(), hSubMenu;
-				mf = g_PickerMode <= IDC_BYMOUSE ? MF_GRAYED : 0;
+				mf = MenuEnabledFlag(g_PickerMode > IDC_BYMOUSE);
 				AppendMenuA(hMenu, MF_POPUP|mf, (SIZE_T) (hSubMenu = CreatePopupMenu()), "Interpret as");
 				AppendMenuA(hSubMenu, MF_STRING|MenuCheckedFlag(g_ForceClass < 0), IDC_FORCECLASS_NONE, "Auto");
 				AppendMenuA(hSubMenu, MF_SEPARATOR, 0, 0);
@@ -955,15 +959,19 @@ static LRESULT CALLBACK MainWndProc(HWND hWnd, UINT Msg, WPARAM WPar, LPARAM LPa
 					mf = MenuCheckedFlag(g_ForceClass == classes[i].Idx);
 					AppendMenuA(hSubMenu, MF_STRING|mf, IDC_FORCECLASS_FIRST + classes[i].Idx, classes[i].Cls);
 				}
+
 				AppendMenuA(hMenu, MF_SEPARATOR, 0, 0);
 				AppendMenuA(hMenu, MF_STRING|MenuCheckedFlag(g_hLockKbdHook), IDC_LOCKONKEY, "&Lock on CapsLock");
+
 				AppendMenuA(hMenu, MF_SEPARATOR, 0, 0);
 				AppendMenuA(hMenu, MF_POPUP, (SIZE_T) (hSubMenu = CreatePopupMenu()), "Always on Top");
 				AppendMenuA(hSubMenu, MF_STRING|MenuCheckedFlag(g_AOT == IDC_AOT_NEVER), IDC_AOT_NEVER, "&Never");
 				AppendMenuA(hSubMenu, MF_STRING|MenuCheckedFlag(g_AOT == IDC_AOT_INACTIVE), IDC_AOT_INACTIVE, "When &Inactive");
 				AppendMenuA(hSubMenu, MF_STRING|MenuCheckedFlag(g_AOT == IDC_AOT_ALWAYS), IDC_AOT_ALWAYS, "&Always");
+
 				AppendMenuA(hMenu, MF_SEPARATOR, 0, 0);
 				AppendMenuA(hMenu, MF_STRING, IDC_ABOUT, "About");
+
 				SendMessage(g_hTBar, TB_PRESSBUTTON , IDC_MENU, true);
 				TrackPopupMenu(hMenu, tpm_align | TPM_VERTICAL, r.left, r.top, 0, hWnd, NULL);
 				SendMessage(g_hTBar, TB_PRESSBUTTON , IDC_MENU, false);
@@ -994,13 +1002,13 @@ static LRESULT CALLBACK MainWndProc(HWND hWnd, UINT Msg, WPARAM WPar, LPARAM LPa
 			break;
 
 		case IDC_AOT_NEVER:
-			SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE), g_AOT = IDC_AOT_NEVER;
+			SetAlwaysOnTop(hWnd, false), g_AOT = IDC_AOT_NEVER;
 			break;
 		case IDC_AOT_INACTIVE:
-			if (GetForegroundWindow() != hWnd) break;
-			CXX_ATT_FALLTHROUGH;
+			SetAlwaysOnTop(hWnd, GetForegroundWindow() != hWnd), g_AOT = IDC_AOT_INACTIVE;
+			break;
 		case IDC_AOT_ALWAYS:
-			SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOSIZE), g_AOT = LOBYTE(WPar);
+			SetAlwaysOnTop(hWnd, true), g_AOT = IDC_AOT_ALWAYS;
 			break;
 
 		case IDC_FORCECLASS_NONE:

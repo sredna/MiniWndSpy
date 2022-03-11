@@ -889,12 +889,17 @@ template<typename T> static UINT MenuCheckedFlag(T Checked)
 	return Checked ? MF_CHECKED : MF_UNCHECKED;
 }
 
+template<typename T> static UINT MenuEnabledFlag(T Enabled)
+{
+	return Enabled ? MF_ENABLED : (MF_DISABLED|MF_GRAYED);
+}
+
 template<UINT ItemBy = MF_BYCOMMAND> struct MenuItem {
 	static UINT GetState(HMENU hMenu, UINT Id) { return GetMenuState(hMenu, Id, ItemBy); }
 	static BOOL IsChecked(HMENU hMenu, UINT Id) { return GetState(hMenu, Id) & MF_CHECKED; }
 };
 
-static BOOL SetAlwaysOnTop(HWND hWnd, BOOL AoT, HWND hRequestor = 0)
+static BOOL SetAlwaysOnTop(HWND hWnd, BOOL AoT, HWND hRequestor = HWND_TOP)
 {
 	UINT swp = SWP_ASYNCWINDOWPOS|SWP_NOMOVE|SWP_NOSIZE;
 	if (!AoT) SetWindowPos(hWnd, hRequestor, 0, 0, 0, 0, swp|SWP_NOACTIVATE|SWP_NOSENDCHANGING|SWP_DEFERERASE);
